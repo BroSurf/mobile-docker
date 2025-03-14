@@ -103,6 +103,10 @@ class AndroidEmulatorManager:
         self.pc = None
         self.video_track = None
         self.dummy_channel = None
+        self.native_width = None
+        self.native_height = None
+        self.display_width = None
+        self.display_height = None
 
     async def capture_screen(self) -> Optional[np.ndarray]:
         """Capture the current screen of the emulator using ADB."""
@@ -122,8 +126,12 @@ class AndroidEmulatorManager:
                 logger.error(f"{Fore.RED}Failed to capture screen: {stderr.decode()}")
                 return None
                 
-            # Convert PNG data to numpy array
-            image = Image.open(io.BytesIO(stdout))
+            # Read image from bytes using PIL to obtain native size
+            image_stream = io.BytesIO(stdout)
+            image = Image.open(image_stream)
+            native_width, native_height = image.size  # (width, height)
+            
+            # Convert PNG data to numpy array and then to BGR for OpenCV
             frame = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
             
             # Resize frame if needed (WebRTC has size limitations)
@@ -134,6 +142,15 @@ class AndroidEmulatorManager:
                 new_width = int(width * scale)
                 new_height = int(height * scale)
                 frame = cv2.resize(frame, (new_width, new_height))
+            else:
+                new_width = width
+                new_height = height
+            
+            # Store native and display resolutions for coordinate conversion
+            self.native_width = native_width
+            self.native_height = native_height
+            self.display_width = new_width
+            self.display_height = new_height
             
             return frame
             
@@ -148,26 +165,53 @@ class AndroidEmulatorManager:
             
         try:
             if event_type == "touch":
-                # Send touch event
+                # Use relative coordinates if provided by the client:
+                if "relativeX" in data and "relativeY" in data:
+                    relativeX = data["relativeX"]
+                    relativeY = data["relativeY"]
+                    x_scaled = int(relativeX * self.native_width)
+                    y_scaled = int(relativeY * self.native_height)
+                    logger.info(
+                        f"Received relative tap: ({relativeX:.2f}, {relativeY:.2f}). "
+                        f"Native resolution: ({self.native_width}, {self.native_height}). "
+                        f"Scaled native coordinates: ({x_scaled}, {y_scaled})."
+                    )
+                else:
+                    # Debug logging to help diagnose scaling issues
+                    logger.debug(f"Touch event data: {data}")
+                    logger.debug(
+                        f"Display resolution used for scaling: ({self.display_width}, {self.display_height}); "
+                        f"Native resolution: ({self.native_width}, {self.native_height})."
+                    )
+                    x_scaled = int(data["x"] * self.native_width / self.display_width)
+                    y_scaled = int(data["y"] * self.native_height / self.display_height)
+                    logger.info(
+                        f"Received absolute tap at display coordinates ({data['x']}, {data['y']}). "
+                        f"Calculated native coordinates: ({x_scaled}, {y_scaled})."
+                    )
+                
+                # Send the tap event using ADB with scaled coordinates.
                 cmd = [
                     "adb", "-s", f"emulator-{self.adb_port}", "shell",
-                    "input", "tap", str(data["x"]), str(data["y"])
+                    "input", "tap", str(x_scaled), str(y_scaled)
                 ]
             elif event_type == "key":
-                # Send key event
+                # If it is a key event.
                 cmd = [
                     "adb", "-s", f"emulator-{self.adb_port}", "shell",
                     "input", "keyevent", str(data["keycode"])
                 ]
             else:
                 return False
-                
+            
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
-            await process.communicate()
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                logger.error(f"ADB command failed: {stderr.decode().strip()}")
             return process.returncode == 0
             
         except Exception as e:
@@ -979,14 +1023,14 @@ class AndroidEmulatorManager:
                     const video = document.getElementById('video');
                     video.addEventListener('click', function(e) {{
                         const rect = video.getBoundingClientRect();
-                        const x = Math.round(e.clientX - rect.left);
-                        const y = Math.round(e.clientY - rect.top);
+                        const relativeX = (e.clientX - rect.left) / rect.width;
+                        const relativeY = (e.clientY - rect.top) / rect.height;
                         
                         if (ws && ws.readyState === WebSocket.OPEN) {{
                             ws.send(JSON.stringify({{
                                 command: "input_event",
                                 event_type: "touch",
-                                data: {{ x: x, y: y }}
+                                data: {{ relativeX: relativeX, relativeY: relativeY }}
                             }}));
                         }}
                     }});

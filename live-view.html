@@ -1,0 +1,17 @@
+// Updated click event handler in the live-view page
+video.addEventListener('click', function(e) {
+    const rect = video.getBoundingClientRect();
+    // Calculate the relative coordinates (values between 0 and 1)
+    const relativeX = (e.clientX - rect.left) / rect.width;
+    const relativeY = (e.clientY - rect.top) / rect.height;
+    
+    console.log(`Click at bounding box: (${e.clientX - rect.left}, ${e.clientY - rect.top})`);
+    console.log(`Relative coordinates: (${relativeX.toFixed(2)}, ${relativeY.toFixed(2)})`);
+    
+    // Send the relative coordinates to the server
+    socket.send(JSON.stringify({
+        command: "input_event",
+        event_type: "touch",
+        data: { relativeX: relativeX, relativeY: relativeY }
+    }));
+}); 
