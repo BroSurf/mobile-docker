@@ -25,6 +25,7 @@ from aiortc.mediastreams import MediaStreamError
 import websockets
 from aiohttp import web
 from colorama import Fore, Style, init
+from av import VideoFrame
 
 # Initialize colorama
 init(autoreset=True)
@@ -55,21 +56,24 @@ class EmulatorVideoTrack(VideoStreamTrack):
         self._frame_lock = asyncio.Lock()
 
     async def recv(self):
-        """Get the next frame from the emulator screen."""
+        # Get the next timestamp (pts, time_base) for the frame
+        pts, time_base = await self.next_timestamp()
         async with self._frame_lock:
-            # Capture screen using ADB
+            # Capture the screen using ADB
             frame = await self.emulator_manager.capture_screen()
             if frame is None:
-                # If no frame, return a black frame instead of None
+                # If no frame is available return a black frame
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
             
-            # Convert frame to RGB
+            # Convert frame to RGB (if not already in that format)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # Create timestamp
-            self._timestamp = time.time() - self._start
+            # Create an av.VideoFrame from the numpy array
+            video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
+            video_frame.pts = pts
+            video_frame.time_base = time_base
             
-            return frame
+            return video_frame
 
     @property
     def kind(self):
