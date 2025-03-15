@@ -886,46 +886,144 @@ class AndroidEmulatorManager:
             <html>
             <head>
                 <title>Android Emulator Live View</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
-                    .container {{ max-width: 1200px; margin: 0 auto; }}
-                    #video {{ width: 100%; max-width: 800px; }}
-                    .controls {{ margin: 20px 0; }}
-                    button {{ padding: 8px 16px; margin: 5px; border-radius: 4px; cursor: pointer; }}
-                    .status {{ margin: 10px 0; padding: 10px; border-radius: 4px; }}
-                    .error {{ background-color: #f8d7da; color: #721c24; }}
-                    .success {{ background-color: #d4edda; color: #155724; }}
+                    body {{
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 20px;
+                        background-color: #f0f0f0;
+                    }}
+                    .container {{
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                    }}
+                    /* Use padding instead of border so the screen isn't cropped */
+                    .phone-frame {{
+                        position: relative;
+                        width: 300px;
+                        height: 600px;
+                        background: #333; /* bezel color */ 
+                        border-radius: 40px;
+                        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+                        padding: 16px; /* space for bezel */
+                        box-sizing: border-box;
+                    }}
+                    .phone-screen {{
+                        width: 100%;
+                        height: 100%;
+                        background: #000;
+                        border-radius: 20px;
+                        overflow: hidden;
+                    }}
+                    /* object-fit 'contain' ensures the entire screen is visible */
+                    #video {{
+                        width: 100%;
+                        height: 100%;
+                        object-fit: contain;
+                    }}
+                    .button {{
+                        background-color: #555;
+                        color: #fff;
+                        padding: 5px;
+                        border: none;
+                        border-radius: 5px;
+                        text-align: center;
+                        cursor: pointer;
+                        user-select: none;
+                    }}
+                    .power-button {{
+                        position: absolute;
+                        top: 20px;
+                        right: -50px;
+                        width: 40px;
+                        height: 40px;
+                        line-height: 40px;
+                    }}
+                    .side-buttons {{
+                        position: absolute;
+                        left: -50px;
+                        top: 50%;
+                        transform: translateY(-50%);
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                    }}
+                    .side-buttons .button {{
+                        width: 40px;
+                        height: 40px;
+                        line-height: 40px;
+                    }}
+                    .nav-buttons-outside {{
+                        margin-top: 10px;
+                        display: flex;
+                        justify-content: center;
+                        gap: 20px;
+                    }}
+                    .nav-buttons-outside .button {{
+                        width: 60px;
+                        height: 40px;
+                        line-height: 40px;
+                        text-align: center;
+                        background-color: #555;
+                        color: #fff;
+                        border-radius: 5px;
+                        cursor: pointer;
+                    }}
+                    #status {{
+                        margin: 10px 0;
+                        padding: 10px;
+                        width: 300px;
+                        text-align: center;
+                        border-radius: 4px;
+                    }}
+                    .status.success {{
+                        background-color: #d4edda;
+                        color: #155724;
+                    }}
+                    .status.error {{
+                        background-color: #f8d7da;
+                        color: #721c24;
+                    }}
                 </style>
             </head>
             <body>
                 <div class="container">
                     <h1>Android Emulator Live View</h1>
                     <div id="status" class="status"></div>
-                    <video id="video" autoplay playsinline></video>
-                    <div class="controls">
-                        <button onclick="sendKey(24)">Volume Up</button>
-                        <button onclick="sendKey(25)">Volume Down</button>
-                        <button onclick="sendKey(26)">Power</button>
-                        <button onclick="sendKey(27)">Back</button>
-                        <button onclick="sendKey(29)">Home</button>
+                    <div class="phone-frame">
+                        <div class="phone-screen">
+                            <video id="video" autoplay playsinline></video>
+                        </div>
+                        <div class="power-button button">⏻</div>
+                        <div class="side-buttons">
+                            <div class="volume-up button">🔊</div>
+                            <div class="volume-down button">🔉</div>
+                        </div>
+                    </div>
+                    <div class="nav-buttons-outside">
+                        <button class="back-button button">←</button>
+                        <button class="home-button button">⌂</button>
+                        <button class="overview-button button">▤</button>
                     </div>
                 </div>
-                
                 <script>
+                    // WebRTC and WebSocket setup
                     let pc = null;
                     let ws = null;
                     const statusDiv = document.getElementById('status');
-                    
+                    const video = document.getElementById('video');
+
                     function updateStatus(message, isError = false) {{
                         statusDiv.textContent = message;
                         statusDiv.className = `status ${{isError ? 'error' : 'success'}}`;
                     }}
-                    
+
                     async function startWebRTC() {{
                         try {{
                             updateStatus('Initializing WebRTC connection...');
                             
-                            // Create WebRTC peer connection with proper configuration
                             const config = {{
                                 iceServers: [
                                     {{ urls: 'stun:stun.l.google.com:19302' }}
@@ -933,12 +1031,9 @@ class AndroidEmulatorManager:
                             }};
                             pc = new RTCPeerConnection(config);
                             
-                            // Add a video transceiver in "recvonly" mode so that the offer includes a media section.
                             pc.addTransceiver("video", {{ direction: "recvonly" }});
                             
-                            // Add video track handler
                             pc.ontrack = function(event) {{
-                                const video = document.getElementById('video');
                                 video.srcObject = event.streams[0];
                                 updateStatus('Connected to emulator');
                             }};
@@ -966,16 +1061,13 @@ class AndroidEmulatorManager:
                                 updateStatus(`ICE connection state: ${{pc.iceConnectionState}}`);
                             }};
                             
-                            // Create offer
                             const offer = await pc.createOffer();
                             await pc.setLocalDescription(offer);
                             
-                            // Connect to WebSocket
                             ws = new WebSocket("ws://localhost:{self.ws_port}");
                             
                             ws.onopen = async function() {{
                                 updateStatus('WebSocket connected, sending WebRTC offer...');
-                                // Send WebRTC offer
                                 ws.send(JSON.stringify({{
                                     command: "webrtc_offer",
                                     offer: {{
@@ -987,15 +1079,9 @@ class AndroidEmulatorManager:
                             
                             ws.onmessage = async function(event) {{
                                 const data = JSON.parse(event.data);
-                                
                                 if (data.command === "webrtc_answer") {{
                                     updateStatus('Received WebRTC answer, setting up connection...');
-                                    // Set remote description
-                                    await pc.setRemoteDescription(
-                                        new RTCSessionDescription(data.answer)
-                                    );
-                                    
-                                    // Add ICE candidates if any
+                                    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                                     if (data.candidates) {{
                                         for (const candidate of data.candidates) {{
                                             try {{
@@ -1006,7 +1092,6 @@ class AndroidEmulatorManager:
                                         }}
                                     }}
                                 }} else if (data.command === "webrtc_candidate") {{
-                                    // Add ICE candidate
                                     try {{
                                         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                                     }} catch (e) {{
@@ -1022,23 +1107,14 @@ class AndroidEmulatorManager:
                             ws.onclose = function() {{
                                 updateStatus('WebSocket connection closed', true);
                             }};
+                            
                         }} catch (error) {{
                             updateStatus(`Error: ${{error.message}}`, true);
                             console.error('WebRTC error:', error);
                         }}
                     }}
-                    
-                    function sendKey(keycode) {{
-                        if (ws && ws.readyState === WebSocket.OPEN) {{
-                            ws.send(JSON.stringify({{
-                                command: "input_event",
-                                event_type: "key",
-                                data: {{ keycode: keycode }}
-                            }}));
-                        }}
-                    }}
-                    
-                    // Variables to store pointer data.
+
+                    // Pointer events: swipe vs tap handling
                     let pointerStartX = 0, pointerStartY = 0, pointerStartTime = 0;
                     let swipeDetected = false;
 
@@ -1059,7 +1135,6 @@ class AndroidEmulatorManager:
                         const distance = Math.sqrt(dx * dx + dy * dy);
                         const duration = Date.now() - pointerStartTime;
                         if (distance >= 0.05) {{
-                            // If pointer moved enough, treat it as a swipe/scroll.
                             ws.send(JSON.stringify({{
                                 command: "input_event",
                                 event_type: "swipe",
@@ -1076,7 +1151,6 @@ class AndroidEmulatorManager:
                     }});
 
                     video.addEventListener("click", function(e) {{
-                        // If a swipe was detected, ignore the click event.
                         if (swipeDetected) {{
                             swipeDetected = false;
                             return;
@@ -1090,8 +1164,37 @@ class AndroidEmulatorManager:
                             data: {{ relativeX: relativeX, relativeY: relativeY }}
                         }}));
                     }});
-                    
-                    // Start WebRTC when page loads
+
+                    // Button controls for power, navigation, and volume.
+                    function sendKey(keycode) {{
+                        if (ws && ws.readyState === WebSocket.OPEN) {{
+                            ws.send(JSON.stringify({{
+                                command: "input_event",
+                                event_type: "key",
+                                data: {{ keycode: keycode }}
+                            }}));
+                        }}
+                    }}
+
+                    document.querySelector(".power-button").addEventListener("click", function() {{
+                        sendKey(26); // Power key
+                    }});
+                    document.querySelector(".volume-up").addEventListener("click", function() {{
+                        sendKey(24); // Volume up key
+                    }});
+                    document.querySelector(".volume-down").addEventListener("click", function() {{
+                        sendKey(25); // Volume down key
+                    }});
+                    document.querySelector(".back-button").addEventListener("click", function() {{
+                        sendKey(4); // Back key
+                    }});
+                    document.querySelector(".home-button").addEventListener("click", function() {{
+                        sendKey(3); // Home key
+                    }});
+                    document.querySelector(".overview-button").addEventListener("click", function() {{
+                        sendKey(187); // Overview key
+                    }});
+
                     window.addEventListener('load', startWebRTC);
                 </script>
             </body>
