@@ -165,7 +165,6 @@ class AndroidEmulatorManager:
             
         try:
             if event_type == "touch":
-                # Use relative coordinates if provided by the client:
                 if "relativeX" in data and "relativeY" in data:
                     relativeX = data["relativeX"]
                     relativeY = data["relativeY"]
@@ -177,7 +176,6 @@ class AndroidEmulatorManager:
                         f"Scaled native coordinates: ({x_scaled}, {y_scaled})."
                     )
                 else:
-                    # Debug logging to help diagnose scaling issues
                     logger.debug(f"Touch event data: {data}")
                     logger.debug(
                         f"Display resolution used for scaling: ({self.display_width}, {self.display_height}); "
@@ -189,14 +187,35 @@ class AndroidEmulatorManager:
                         f"Received absolute tap at display coordinates ({data['x']}, {data['y']}). "
                         f"Calculated native coordinates: ({x_scaled}, {y_scaled})."
                     )
-                
-                # Send the tap event using ADB with scaled coordinates.
                 cmd = [
                     "adb", "-s", f"emulator-{self.adb_port}", "shell",
                     "input", "tap", str(x_scaled), str(y_scaled)
                 ]
+            elif event_type == "swipe":
+                # Use a default duration if not provided
+                duration = data.get("duration", 300)
+                # Expect relative coordinates from the client.
+                if all(k in data for k in ("relativeX1", "relativeY1", "relativeX2", "relativeY2")):
+                    relX1 = data["relativeX1"]
+                    relY1 = data["relativeY1"]
+                    relX2 = data["relativeX2"]
+                    relY2 = data["relativeY2"]
+                    x1 = int(relX1 * self.native_width)
+                    y1 = int(relY1 * self.native_height)
+                    x2 = int(relX2 * self.native_width)
+                    y2 = int(relY2 * self.native_height)
+                    logger.info(
+                        f"Received swipe: start relative ({relX1:.2f}, {relY1:.2f}), end relative ({relX2:.2f}, {relY2:.2f}). "
+                        f"Native coordinates: from ({x1}, {y1}) to ({x2}, {y2}), duration: {duration}ms"
+                    )
+                else:
+                    logger.error("Swipe event data missing required coordinates.")
+                    return False
+                cmd = [
+                    "adb", "-s", f"emulator-{self.adb_port}", "shell",
+                    "input", "swipe", str(x1), str(y1), str(x2), str(y2), str(duration)
+                ]
             elif event_type == "key":
-                # If it is a key event.
                 cmd = [
                     "adb", "-s", f"emulator-{self.adb_port}", "shell",
                     "input", "keyevent", str(data["keycode"])
@@ -1019,20 +1038,57 @@ class AndroidEmulatorManager:
                         }}
                     }}
                     
-                    // Handle touch events
-                    const video = document.getElementById('video');
-                    video.addEventListener('click', function(e) {{
+                    // Variables to store pointer data.
+                    let pointerStartX = 0, pointerStartY = 0, pointerStartTime = 0;
+                    let swipeDetected = false;
+
+                    video.addEventListener("pointerdown", function(e) {{
+                        pointerStartTime = Date.now();
+                        const rect = video.getBoundingClientRect();
+                        pointerStartX = (e.clientX - rect.left) / rect.width;
+                        pointerStartY = (e.clientY - rect.top) / rect.height;
+                        swipeDetected = false;
+                    }});
+
+                    video.addEventListener("pointerup", function(e) {{
+                        const rect = video.getBoundingClientRect();
+                        const endX = (e.clientX - rect.left) / rect.width;
+                        const endY = (e.clientY - rect.top) / rect.height;
+                        const dx = endX - pointerStartX;
+                        const dy = endY - pointerStartY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const duration = Date.now() - pointerStartTime;
+                        if (distance >= 0.05) {{
+                            // If pointer moved enough, treat it as a swipe/scroll.
+                            ws.send(JSON.stringify({{
+                                command: "input_event",
+                                event_type: "swipe",
+                                data: {{
+                                    relativeX1: pointerStartX,
+                                    relativeY1: pointerStartY,
+                                    relativeX2: endX,
+                                    relativeY2: endY,
+                                    duration: duration
+                                }}
+                            }}));
+                            swipeDetected = true;
+                        }}
+                    }});
+
+                    video.addEventListener("click", function(e) {{
+                        // If a swipe was detected, ignore the click event.
+                        if (swipeDetected) {{
+                            swipeDetected = false;
+                            return;
+                        }}
                         const rect = video.getBoundingClientRect();
                         const relativeX = (e.clientX - rect.left) / rect.width;
                         const relativeY = (e.clientY - rect.top) / rect.height;
-                        
-                        if (ws && ws.readyState === WebSocket.OPEN) {{
-                            ws.send(JSON.stringify({{
-                                command: "input_event",
-                                event_type: "touch",
-                                data: {{ relativeX: relativeX, relativeY: relativeY }}
-                            }}));
-                        }}
+                        ws.send(JSON.stringify({{
+                            command: "input_event",
+                            event_type: "touch",
+                            data: {{ relativeX: relativeX, relativeY: relativeY }}
+                        }}));
                     }});
                     
                     // Start WebRTC when page loads
