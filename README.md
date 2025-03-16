@@ -122,3 +122,31 @@ Future enhancements could include:
 - Screen capture and remote control capabilities
 - Full CDP-like protocol implementation
 - Support for physical devices 
+
+# Android Emulator in Docker
+
+This Docker image contains the Android SDK and related tools for Android app development.
+
+## Important Note for macOS Users
+
+Due to hardware virtualization limitations in Docker on macOS, especially on Apple Silicon (ARM),
+the Android Emulator cannot be fully executed inside this container.
+
+The container includes:
+- Android SDK
+- Platform Tools (adb)
+- Emulator binaries
+
+## Usage
+
+This container can be used for:
+1. Building Android applications
+2. Running automated tests that don't require an emulator
+3. Using ADB to communicate with physical devices connected to the host
+
+## For Testing Applications
+
+Consider these alternatives:
+1. Connect a physical device via USB to your Mac
+2. Run the Android emulator directly on your Mac (outside Docker)
+3. Use cloud testing services like Firebase Test Lab 
