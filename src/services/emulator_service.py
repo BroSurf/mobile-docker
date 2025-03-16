@@ -364,6 +364,8 @@ class EmulatorService:
                 "emulator", 
                 "-avd", self.emulator_name,
                 "-port", str(self.adb_port),
+                "-no-accel",
+                "-gpu", "swiftshader_indirect",
                 "-no-snapshot",
                 "-no-boot-anim"
             ]
