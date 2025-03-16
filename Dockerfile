@@ -92,4 +92,4 @@ ENV PYTHONUNBUFFERED=1
 #============================================
 # Run the FastAPI application
 #============================================
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8040"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8039"]
