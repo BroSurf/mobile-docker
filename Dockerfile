@@ -10,12 +10,12 @@ WORKDIR /
 #=============================
 SHELL ["/bin/bash", "-c"]   
 
-RUN apt update && apt install -y curl sudo wget unzip bzip2 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev libnss3 libxcursor1 libpulse-dev libxshmfence-dev xauth xvfb x11vnc fluxbox wmctrl libdbus-glib-1-2
+RUN apt update && apt install -y curl sudo wget unzip bzip2 libdrm-dev libxkbcommon-dev libgbm-dev libasound-dev libnss3 libxcursor1 libpulse-dev libxshmfence-dev xauth xvfb x11vnc fluxbox wmctrl libdbus-glib-1-2 libxcb-cursor0 libgl1-mesa-glx
 
 #==============================
 # Android SDK ARGS
 #==============================
-ARG ARCH="x86_64" 
+ARG ARCH="arm64-v8a" 
 ARG TARGET="google_apis_playstore"  
 ARG API_LEVEL="34" 
 ARG BUILD_TOOLS="34.0.0"
@@ -56,7 +56,18 @@ ARG EMULATOR_NAME="nexus"
 ARG EMULATOR_DEVICE="Nexus 6"
 ENV EMULATOR_NAME=$EMULATOR_NAME
 ENV DEVICE_NAME=$EMULATOR_DEVICE
+# Set up environment variables for headless operation
+ENV DISPLAY=:99
+ENV QT_DEBUG_PLUGINS=1
+ENV QTWEBENGINE_DISABLE_SANDBOX=1
+ENV ANDROID_EMULATOR_USE_SYSTEM_LIBS=1
+# Use software rendering for emulator
 RUN echo "no" | avdmanager --verbose create avd --force --name "${EMULATOR_NAME}" --device "${EMULATOR_DEVICE}" --package "${EMULATOR_PACKAGE}"
+RUN echo "hw.lcd.density=440" >> ~/.android/avd/${EMULATOR_NAME}.avd/config.ini && \
+    echo "hw.lcd.height=1920" >> ~/.android/avd/${EMULATOR_NAME}.avd/config.ini && \
+    echo "hw.lcd.width=1080" >> ~/.android/avd/${EMULATOR_NAME}.avd/config.ini && \
+    echo "hw.gpu.enabled=yes" >> ~/.android/avd/${EMULATOR_NAME}.avd/config.ini && \
+    echo "hw.gpu.mode=swiftshader_indirect" >> ~/.android/avd/${EMULATOR_NAME}.avd/config.ini
 
 #============================================
 # Install Python and pip
@@ -90,6 +101,12 @@ EXPOSE 8039 8040 8041
 ENV PYTHONUNBUFFERED=1
 
 #============================================
+# Add emulator startup script
+#============================================
+COPY start_emulator.sh /app/
+RUN chmod +x /app/start_emulator.sh
+
+#============================================
 # Run the FastAPI application
 #============================================
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8039"]
+CMD ["/app/start_emulator.sh"]
